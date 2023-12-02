@@ -10,7 +10,15 @@ library(rugarch)
 library(FinTS)
 library(tidyverse)
 
-bond <- read.csv("C:/Users/tanne/Downloads/BOND_5yr_daily.csv")
+# bond <- read.csv("C:/Users/tanne/Downloads/BOND_5yr_daily.csv")
+
+setwd("~/Documents/MIT/15.072_Advanced_Analytics_Edge/Project/A_EDGE")
+
+data_file <- "Data/BOND_5yr_daily.csv"
+
+bond <- read.csv(data_file)
+
+bond
 
 #Cleaning data
 
@@ -77,7 +85,7 @@ X.test <- test
 #knots <- quantile(times.train, probs = c(0.25, 0.5, 0.75))
 reg.model<- lm(ly ~poly(times, degree=3)*(.-times)+0, data = X.train)
 #reg.model<- lm(ly ~ poly(times, degree = 3) + ., data = X.train)
-plot(times.train, ly.train, type = "l", col = "black", xlab = "Date", 
+plot(times.train, ly.train, type = "l", col = "black", xlab = "Date",
      ylab = "Observed values", main = "Time Series with Regression Fit")
 lines(times.train, fitted(reg.model), type = "l", col = "red")
 
@@ -129,7 +137,7 @@ ArchTest(res.garch^2, lag = 22)
 Box.test(res.garch^2, lag = 22, type = "Ljung-Box")
 
 #Training set performance
-reg.predict = predict(reg.model, newdata = X.train) 
+reg.predict = predict(reg.model, newdata = X.train)
 res.predict = fitted(garch.model)
 ly.predict <- reg.predict + res.predict
 y.predict = exp(ly.predict)
