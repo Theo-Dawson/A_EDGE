@@ -217,15 +217,31 @@ getMDA <- function(y.actual, y.predicted, n) {
         delta_predicted = y.predicted[i] - y.predicted[i-1]
 
         if ((delta_actual < 0) & (delta_predicted < 0)){
+            # if actual and predicted decrease
             total_right = total_right + 1
         } else if ((delta_actual >= 0) & (delta_predicted >= 0)) {
+            # if actual and predicted increase (or remain constant)
             total_right = total_right + 1
         } else {
+            # if opposite signs
             total_right = total_right
         }
     }
 
     return(total_right/(n-1))
+}
+
+getCoverage <- function(y.actual, garch.UB, garch.LB, n) {
+    total_right = 0
+
+    for (i in 1:n) {
+        if ((garch.UB[i] >= y.actual[i]) & (garch.LB[i] <= y.actual[i])) {
+            # Observed value within confidence interval from GARCH
+            total_right = total_right + 1
+        }
+    }
+
+    return(total_right/(n))
 }
 
 train_performance <- function(reg.model, garch.model,
@@ -250,7 +266,6 @@ train_performance <- function(reg.model, garch.model,
     mae <- getMAE(y.train, y.predict, n)
     rmse <- getRMSE(y.train, y.predict, n)
     mda <- getMDA(y.train, y.predict, n)
-    # coverage_prob <- getCoverage(y.train, y.predict, n)
     # interval_score <- getInterval(y.train, y.predict, n)
 
     return(list(y.predict, mae, rmse, mda))
@@ -287,10 +302,10 @@ test_performance <- function(reg.model, garch.model,
     mae <- getMAE(y.test, y.predict, n)
     rmse <- getRMSE(y.test, y.predict, n)
     mda <- getMDA(y.test, y.predict, n)
-    # coverage_prob <- getCoverage(y.test, y.predict, n)
+    coverage_prob <- getCoverage(y.test, upper_bound, lower_bound, n)
     # interval_score <- getInterval(y.test, y.predict, n)
 
-    return(list(y.predict, mae, rmse, mda))
+    return(list(y.predict, mae, rmse, mda, coverage_prob))
 }
 #################################################
 
@@ -306,7 +321,6 @@ is_aic_list <- c()
 is_mae_list <- c()
 is_rmse_list <- c()
 is_mda_list <- c()
-is_coverage_list <- c()
 is_interval_list <- c()
 os_ais_list <- c()
 os_mae_list <- c()
@@ -314,7 +328,6 @@ os_rmse_list <- c()
 os_mda_list <- c()
 os_coverage_list <- c()
 os_interval_list <- c()
-
 
 setwd("~/Documents/MIT/15.072_Advanced_Analytics_Edge/Project/A_EDGE")
 
@@ -327,7 +340,6 @@ bond_path <- "Data/BOND_5yr_daily.csv"
 # 4. gitARMAGARCH(res, reg.model, times.train, y.train, X.test, y.test, bool_plots, bool_output)
 # 5. train_performance(reg.model, garch.model, X.train, y.train, times.train, bool_plots))
 # 6. test_performance(reg.model, garch.model, X.test, y.test, times.test, test_window, z_score, bool_plots)
-
 
 for (p in c(1, 2, 3, 4)) {
     for (g1 in c(1, 2, 3)) {
@@ -427,21 +439,20 @@ for (p in c(1, 2, 3, 4)) {
                                                 z_stat,
                                                 plots)
                 # Agrs: reg.model, garch.model, X.test, y.test, times.test, test_window, z_score, bool_plots
-                # Return: y.predict mae, rmse, mda
+                # Return: y.predict mae, rmse, mda, coverage_prob
                 y.test.predict <- test_return[[1]]
                 os_mae <- test_return[[2]]
                 os_rmse <- test_return[[3]]
                 os_mda <- test_return[[4]]
+                os_coverage <- test_return[[5]]  #only out of sample calculated
 
                 remove(test_return)
 
 
                 # //TODO
                 is_aic = 0
-                is_coverage = 0
                 is_interval = 0
                 os_aic = 0
-                os_coverage = 0
                 os_interval = 0
 
                 degree_list <- append(degree_list, degree_p)
@@ -456,7 +467,6 @@ for (p in c(1, 2, 3, 4)) {
                 is_mae_list <- append(is_mae_list, is_mae)
                 is_rmse_list <- append(is_rmse_list, is_rmse)
                 is_mda_list <- append(is_mda_list, is_mda)
-                is_coverage_list <- append(is_coverage_list, is_coverage)
                 is_interval_list <- append(is_interval_list, is_interval)
                 os_ais_list <- append(os_ais_list, os_aic)
                 os_mae_list <- append(os_mae_list, os_mae)
@@ -464,17 +474,18 @@ for (p in c(1, 2, 3, 4)) {
                 os_mda_list <- append(os_mda_list, os_mda)
                 os_coverage_list <- append(os_coverage_list, os_coverage)
                 os_interval_list <- append(os_interval_list, os_interval)
+
             }
         }
     }
 }
 
-# Write to CSV:
+## Write to CSV:
 # 1. Type of regression (degree_p)
 # 2. ARMIA Values (arima_P, arima_D, arima_Q)
 # 3. GARCH Values (garch1, garch2)
 # 4. Testing Window (test_window)
-# 4. In-Sample Evaluation (AIC, MAE, RMSE, MDA, Coverage Prob., Interval Score)
+# 4. In-Sample Evaluation (AIC, MAE, RMSE, MDA, Interval Score)
 # 5. Out-of-Sample Evaluation (AIC, MAE, RMSE, MDA, Coverage Prob., Interval Score)
 
 
@@ -490,7 +501,6 @@ params_df = data.frame(`Degree Polynomial` = degree_list,
                        `IS MAE` = is_mae_list,
                        `IS RMSE` = is_rmse_list,
                        `IS MDA` = is_mda_list,
-                       `IS Coverage Prob.` = is_coverage_list,
                        `IS Interval Score` = is_interval_list,
                        `OS AIC` = os_ais_list,
                        `OS MAE` = os_mae_list,
@@ -500,6 +510,4 @@ params_df = data.frame(`Degree Polynomial` = degree_list,
                        `OS Interval Score` = os_interval_list)
 write.csv(params_df, "params_test.csv", row.names=TRUE)
 
-beep()
-beep()
 beep()

@@ -9,7 +9,7 @@ library(splines)
 library(rugarch)
 library(FinTS)
 library(tidyverse)
-
+library(beepr)
 
 ################  FUNCTIONS  ####################
 getData <- function(file_path, test_window, bool_plots) {
@@ -209,6 +209,41 @@ getRMSE <- function(y.actual, y.predicted, n) {
     return(rmse)
 }
 
+getMDA <- function(y.actual, y.predicted, n) {
+    total_right = 0
+
+    for (i in 2:n) {
+        delta_actual = y.actual[i] - y.actual[i-1]
+        delta_predicted = y.predicted[i] - y.predicted[i-1]
+
+        if ((delta_actual < 0) & (delta_predicted < 0)){
+            # if actual and predicted decrease
+            total_right = total_right + 1
+        } else if ((delta_actual >= 0) & (delta_predicted >= 0)) {
+            # if actual and predicted increase (or remain constant)
+            total_right = total_right + 1
+        } else {
+            # if opposite signs
+            total_right = total_right
+        }
+    }
+
+    return(total_right/(n-1))
+}
+
+getCoverage <- function(y.actual, garch.UB, garch.LB, n) {
+    total_right = 0
+
+    for (i in 1:n) {
+        if ((garch.UB[i] >= y.actual[i]) & (garch.LB[i] <= y.actual[i])) {
+            # Observed value within confidence interval from GARCH
+            total_right = total_right + 1
+        }
+    }
+
+    return(total_right/(n))
+}
+
 train_performance <- function(reg.model, garch.model,
                               X.train, y.train, times.train,
                               bool_plots) {
@@ -230,10 +265,10 @@ train_performance <- function(reg.model, garch.model,
     #// TODO
     mae <- getMAE(y.train, y.predict, n)
     rmse <- getRMSE(y.train, y.predict, n)
-    # mda <- getMDA(y.train, y.predit)
-    # coverage_prob <- getCoverage(y.train, y.predict)
+    mda <- getMDA(y.train, y.predict, n)
+    # interval_score <- getInterval(y.train, y.predict, n)
 
-    return(list(y.predict, mae, rmse))
+    return(list(y.predict, mae, rmse, mda))
 }
 
 test_performance <- function(reg.model, garch.model,
@@ -266,10 +301,11 @@ test_performance <- function(reg.model, garch.model,
     #// TODO
     mae <- getMAE(y.test, y.predict, n)
     rmse <- getRMSE(y.test, y.predict, n)
-    # mda <- getMDA(y.test, y.predit)
-    # coverage_prob <- getCoverage(y.test, y.predict)
+    mda <- getMDA(y.test, y.predict, n)
+    coverage_prob <- getCoverage(y.test, upper_bound, lower_bound, n)
+    # interval_score <- getInterval(y.test, y.predict, n)
 
-    return(list(y.predict, mae, rmse))
+    return(list(y.predict, mae, rmse, mda, coverage_prob))
 }
 #################################################
 
@@ -317,11 +353,15 @@ y <- data_return[[13]]
 
 remove(data_return)
 
+
+
 reg.model <- fitRegression(degree_p, X.train, times.train, ly.train, plots)
 # Args: degree, X.train, times.train, ly.train, bool_plots
 # Return: reg.model
 
 res <- reg.model$residuals
+
+
 
 residual_return <- residualAnalysis(reg.model, res, plots, output)
 # Args: reg.model, res, bool_plots, bool_output
@@ -329,6 +369,9 @@ residual_return <- residualAnalysis(reg.model, res, plots, output)
 
 box_p_value_initial <- residual_return[[1]]
 white_p_value_initial <- residual_return[[2]]
+
+remove(residual_return)
+
 
 
 garch_return <- fitARMAGARCH(res, reg.model,
@@ -348,14 +391,23 @@ arima_Q <- garch_return[[4]]
 box_p_value_final <- garch_return[[5]]
 white_p_value_final <- garch_return[[6]]
 
+remove(garch_return)
+
+
+
 train_return <- train_performance(reg.model, garch.model,
                                   X.train, y.train, times.train,
                                   plots)
+
+# Args: reg.model, garch.model, X.train, y.train, times.train, bool_plots
+# Return: y.predict, mae, rmse, mda
 y.train.predict <- train_return[[1]]
 is_mae <- train_return[[2]]
 is_rmse <- train_return[[3]]
-# Args: reg.model, garch.model, X.train, y.train, times.train, bool_plots
-# Return: y.predict, mae, rmse
+is_mda <- train_return[[4]]
+
+remove(train_return)
+
 
 test_return <- test_performance(reg.model, garch.model,
                                 X.test, y.test, times.test,
@@ -363,7 +415,9 @@ test_return <- test_performance(reg.model, garch.model,
                                 z_stat,
                                 plots)
 # Agrs: reg.model, garch.model, X.test, y.test, times.test, test_window, z_score, bool_plots
-# Return: y.predict mae, rmse
+# Return: y.predict mae, rmse, mda, coverage_prob
 y.test.predict <- test_return[[1]]
 os_mae <- test_return[[2]]
 os_rmse <- test_return[[3]]
+os_mda <- test_return[[4]]
+os_coverage <- test_return[[5]]  #only out of sample calculated
