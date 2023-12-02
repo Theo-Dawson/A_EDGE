@@ -1,6 +1,5 @@
 #Importing packages and data
 
-install.packages("FinTS")
 library(tseries)
 library(forecast)
 library(lubridate)
@@ -31,18 +30,29 @@ bond <- bond %>%
          m11 = as.integer(month(Date) == 11),
          m12 = as.integer(month(Date) == 12))
 
-bond$y = bond$Close/100
-bond$ly = log(bond$y)
+##Dummy variables for days
+bond <- bond %>%
+  mutate(DayOfMonth = day(Date))
+for (day in 1:31) {
+  col_name <- sprintf("d%02d", day)
+  bond <- bond %>%
+    mutate(!!col_name := as.integer(DayOfMonth == day))
+}
+bond$DayOfMonth <- NULL
+
+
+y = bond$Close/100
+bond$ly = log(y)
 bond$times = 1:nrow(bond)
 
-##Training (80%) and test (20%) sets
-cutoff_index = floor(0.95* nrow(bond))
+##Training is everything except next two weeks
+cutoff_index = floor(nrow(bond) - 100)
 train = bond[1:cutoff_index, ]
 test = bond[(cutoff_index + 1):nrow(bond), ]
 
 ##Remove unused variables
-train = train[, -c(1:7,20)]
-test = test[, -c(1:7,20)]
+train = train[, -c(1:7)]
+test = test[, -c(1:7)]
 
 ##Output variable, ly is log transformed
 y.train = exp(train$ly)
@@ -51,7 +61,7 @@ ly.train = train$ly
 y.test = exp(test$ly)
 ly.test = test$ly
 
-ts.plot(y.train)
+ts.plot(ly.train)
 
 ##Times variable, just an integer sequence
 times = 1:length(bond$times)
@@ -64,11 +74,11 @@ X.test <- test
 
 #Initial fitting (cubic splines LR with no autocorrelation structures)
 
-knots <- quantile(times.train, probs = c(0.25, 0.5, 0.75))
-reg.model<- lm(ly ~poly(times, degree=3)*(.-times), data = X.train)
+#knots <- quantile(times.train, probs = c(0.25, 0.5, 0.75))
+reg.model<- lm(ly ~poly(times, degree=3)*(.-times)+0, data = X.train)
 #reg.model<- lm(ly ~ poly(times, degree = 3) + ., data = X.train)
 plot(times.train, ly.train, type = "l", col = "black", xlab = "Date", 
-     ylab = "Observed values", main = "Time Series with Cubic Splines Fit")
+     ylab = "Observed values", main = "Time Series with Regression Fit")
 lines(times.train, fitted(reg.model), type = "l", col = "red")
 
 #Residual analysis
@@ -97,21 +107,20 @@ checkresiduals(res)
 #Fitting ARMA-GARCH
 
 ##auto.arima to automatically select optimal ARMA parameters
-res = diff(res, lag =21)
 auto.arima(res)
 
 
 ##ARMA-GARCH
 spec <- ugarchspec(
-  variance.model = list(garchOrder = c(5, 5)),
-  mean.model = list(armaOrder = c(25,25), include.mean = FALSE),
+  variance.model = list(garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(1,0), include.mean = FALSE),
   distribution.model = "sstd")
 garch.model <- ugarchfit(spec = spec, data = res, solver = "hybrid")
 
 #GARCH Residual Analysis
 res.garch <- residuals(garch.model, standardize = TRUE)
 res.garch = as.vector(coredata(res.garch))
-ts.plot(res.garch)
+ts.plot(res.garch^2)
 acf(res.garch^2, main = "ACF of Squared GARCH Residuals", lag.max = 100)
 pacf(res.garch^2, lag.max = 100)
 ArchTest(res.garch^2, lag = 22)
@@ -119,38 +128,37 @@ ArchTest(res.garch^2, lag = 22)
 # Perform Ljung-Box test on the squared residuals
 Box.test(res.garch^2, lag = 22, type = "Ljung-Box")
 
-checkresiduals(res.garch^2)
-
 #Training set performance
 reg.predict = predict(reg.model, newdata = X.train) 
 res.predict = fitted(garch.model)
 ly.predict <- reg.predict + res.predict
 y.predict = exp(ly.predict)
 
-interval = 1
-plot(times.train, y.train, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Actual vs. Predicted')
+plot(times.train, y.train, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Training: Actual vs. Predicted')
 lines(times.train, y.predict, type = 'l', col = 'red')
 
 #Test set performance
 reg.predict = predict(reg.model, newdata = X.test) ##WE NEED TO CHECK FOR SE SO WE CAN GET CONF INT FROM JUST USING ARIMA
-res.predict = ugarchforecast(garch.model, n.ahead = length(times.test))
-res.predict <- fitted(res.predict)
-undifferenced_fitted_values = c()
-for (i in 1:length(res.predict)) {
-  undifferenced_fitted_values[i] <- res.predict[i] + res[i + (length(res) - length(res.predict)) - 21]
-}
+garch.predict = ugarchforecast(garch.model, n.ahead = 100)
+res.predict <- fitted(garch.predict)
 ly.predict = reg.predict + res.predict
-forecasted_sigma <- as.numeric(res.predict@forecast$sigmaFor)
-upper_bound = exp(ly.predict + forecasted_sigma^0.5)
-lower_bound = exp(ly.predict - forecasted_sigma^0.5)
+forecasted_sigma <- as.numeric(garch.predict@forecast$sigmaFor)
+upper_bound = exp(ly.predict + 1.96*forecasted_sigma)
+lower_bound = exp(ly.predict - 1.96*forecasted_sigma)
 y.predict = coredata(exp(ly.predict))
 
-plot(y.test[1:14]*100, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Test Set: Actual vs. Predicted', ylim=c(80, 100))
-lines(y.predict[1:14]*100, type = 'l', col = 'red')
+plot(y.test[1:100]*100, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Test Set: Actual vs. Predicted')
+lines(y.predict[1:100]*100, type = 'l', col = 'red')
 lines(upper_bound[1:14]*100, type = 'l', col = 'blue')
 lines(lower_bound[1:14]*100, type = 'l', col = 'blue')
 
 reg.predict$se
+
+
+
+
+
+
 
 z = diff(ly.train,1)
 ts.plot(z)
@@ -178,3 +186,19 @@ lines(67:78, exp(arima_forecasts), col = "green", type = "l")
 lines(exp(upper_bound)[1:7], col = "green", type = "l")
 lines(exp(lower_bound)[1:7], col = "green", lty = 2)
 abline(v = 2, col = "purple", lwd = 2)  # lwd is the line width
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
