@@ -9,6 +9,7 @@ library(splines)
 library(rugarch)
 library(FinTS)
 library(tidyverse)
+library(ggplot2)
 library(beepr)
 
 ################  FUNCTIONS  ####################
@@ -250,13 +251,19 @@ train_performance <- function(reg.model, garch.model,
 
     reg.predict <- predict(reg.model, newdata = X.train)
     res.predict <- fitted(garch.model)
-
     ly.predict <- reg.predict + res.predict
     y.predict <- coredata(exp(ly.predict))
+
+    garch.predict <- ugarchforecast(garch.model, n.ahead=length(times.train))
+    forecasted_sigma <- as.numeric(garch.predict@forecast$sigmaFor)
+    upper_bound <- exp(ly.predict + 1.96*forecasted_sigma)
+    lower_bound <- exp(ly.predict - 1.96*forecasted_sigma)
 
     if (bool_plots == TRUE) {
         plot(times.train, y.train, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Training: Actual vs. Predicted')
         lines(times.train, y.predict, type = 'l', col = 'red')
+        lines(times.train, upper_bound, type = 'l', col = 'blue')
+        lines(times.train, lower_bound, type = 'l', col = 'blue')
     }
 
     y.predict <- as.vector(y.predict)
@@ -289,8 +296,9 @@ test_performance <- function(reg.model, garch.model,
     y.predict <- coredata(exp(ly.predict))
 
     if (bool_plots == TRUE) {
-        plot(y.test[1:test_window]*100, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Test Set: Actual vs. Predicted')
-        lines(y.predict[1:test_window]*100, type = 'l', col = 'red')
+        plot(y.test[1:14]*100, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Test Set: Actual vs. Predicted',
+             ylim=c(88, 92))
+        lines(y.predict[1:14]*100, type = 'l', col = 'red')
         lines(upper_bound[1:14]*100, type = 'l', col = 'blue')
         lines(lower_bound[1:14]*100, type = 'l', col = 'blue')
     }
@@ -305,7 +313,7 @@ test_performance <- function(reg.model, garch.model,
     coverage_prob <- getCoverage(y.test, upper_bound, lower_bound, n)
     # interval_score <- getInterval(y.test, y.predict, n)
 
-    return(list(y.predict, mae, rmse, mda, coverage_prob))
+    return(list(y.predict, mae, rmse, mda, coverage_prob, upper_bound, lower_bound))
 }
 #################################################
 
@@ -322,11 +330,11 @@ bond_path <- "Data/BOND_5yr_daily.csv"
 # 6. test_performance(reg.model, garch.model, X.test, y.test, times.test, test_window, z_score, bool_plots)
 
 test_window = 100
-degree_p = 3
+degree_p = 1
 plots = TRUE
 output = TRUE
 garch1 = 1
-garch2 = 1
+garch2 = 2
 z_stat = 1.96
 
 data_return <- getData(bond_path, test_window, plots)
@@ -421,3 +429,142 @@ os_mae <- test_return[[2]]
 os_rmse <- test_return[[3]]
 os_mda <- test_return[[4]]
 os_coverage <- test_return[[5]]  #only out of sample calculated
+
+garch_UB <- test_return[[6]]
+garch_LB <- test_return[[7]]
+
+# plot(y.test[1:14]*100, type = 'l', col = 'black', xlab = 'Time', ylab = 'y', main = 'Test Set: Actual vs. Predicted',
+#      ylim=c(88, 92))
+# lines(y.predict[1:14]*100, type = 'l', col = 'red')
+# lines(upper_bound[1:14]*100, type = 'l', col = 'blue')
+# lines(lower_bound[1:14]*100, type = 'l', col = 'blue')
+
+plot_df = data.frame(`Price Observed` = y.test[1:14]*100,
+                     `Price Prediction` = y.test.predict[1:14]*100,
+                     `Garch UB` = garch_UB[1:14]*100,
+                     `Garch LB` = garch_LB[1:14]*100,
+                     `Time` = 1:14)
+names(plot_df) <- c("Observed Price", "Predicted Price", "Garch UB", "Garch LB", "Time")
+
+ggplot(plot_df, aes(x=Time)) +
+    geom_line(aes(y=`Observed Price`, color="Observed"), size=1) +
+    geom_line(aes(y=`Predicted Price`, color="LR + ARMA\nPrediction"), size=1) +
+    geom_line(aes(y=`Garch UB`, color="GARCH\nUpper Bound"), size=0.5) +
+    geom_line(aes(y=`Garch LB`, color="GARCH\nLower Bound"), size=0.5) +
+    scale_colour_manual("",
+                        breaks = c("Observed", "LR + ARMA\nPrediction", "GARCH\nUpper Bound", "GARCH\nLower Bound"),
+                        values = c("black", "red", "blue", "blue")) +
+    scale_x_continuous(n.breaks = 14) +
+    scale_y_continuous(n.breaks = 5) +
+    labs(x=paste0("Time (starting at ", times.test[1],")"),
+         y="Stock Market Close Price") +
+    theme_classic() +
+    theme(legend.pos="top",
+          axis.title = element_text(size=15),
+          axis.text=element_text(size=12),
+          title = element_text(size=18),
+          legend.text=element_text(size=10))
+
+# plot(times.train, ly.train, type="l", col="black", xlab="Date",
+#      ylab="Observed Values", main="Time Series with Regression Fit")
+# lines(times.train, fitted(reg.model), type="l", col="red")
+
+plot_df = data.frame(`Time` = times,
+                     `Close Price` = y*100)
+names(plot_df) <- c("Time", "Close Price")
+
+
+ggplot(plot_df, aes(x=Time)) +
+    geom_line(aes(y=`Close Price`), size=0.75) +
+    scale_x_continuous(n.breaks = 13) +
+    scale_y_continuous(n.breaks = 5) +
+    labs(x="Time (from 1 to 1257)",
+         y="Stock Market Close Price (USD)") +
+    theme_classic() +
+    theme(legend.pos="top",
+          axis.title = element_text(size=15),
+          axis.text=element_text(size=12),
+          title = element_text(size=18),
+          legend.text=element_text(size=10))
+
+plot_df = data.frame(`Time` = times.train,
+                     `Close Price` = y.train*100,
+                     `Predicted Price` = exp(fitted(reg.model))*100)
+names(plot_df) <- c("Time", "Close Price", "Predicted Price")
+
+
+ggplot(plot_df, aes(x=Time)) +
+    geom_line(aes(y=`Close Price`, color="Observed"), size=0.75) +
+    geom_line(aes(y=`Predicted Price`, color="LR\nPrediction"), size=0.75) +
+    scale_colour_manual("",
+                        breaks = c("Observed", "LR\nPrediction"),
+                        values = c("black", "red")) +
+    scale_x_continuous(n.breaks = 14) +
+    scale_y_continuous(n.breaks = 5) +
+    labs(x=paste0("Time (starting at ", min(times.train), " to ", max(times.train),")"),
+         y="Stock Market Close Price") +
+    theme_classic() +
+    theme(legend.pos="top",
+          axis.title = element_text(size=15),
+          axis.text=element_text(size=12),
+          title = element_text(size=18),
+          legend.text=element_text(size=10))
+
+plot_df = data.frame(`Time` = times.train,
+                     `Close Price` = y.train*100,
+                     `Predicted Price` = y.train.predict*100)
+names(plot_df) <- c("Time", "Close Price", "Predicted Price")
+
+
+ggplot(plot_df, aes(x=Time)) +
+    geom_line(aes(y=`Close Price`, color="Observed"), size=0.75) +
+    geom_line(aes(y=`Predicted Price`, color="LR + ARMA\nPrediction"), size=1) +
+    scale_colour_manual("",
+                        breaks = c("Observed", "LR + ARMA\nPrediction"),
+                        values = c("black", "red")) +
+    scale_x_continuous(n.breaks = 14) +
+    scale_y_continuous(n.breaks = 5) +
+    labs(x=paste0("Time (starting at ", min(times.train), " to ", max(times.train),")"),
+         y="Stock Market Close Price") +
+    theme_classic() +
+    theme(legend.pos="top",
+          axis.title = element_text(size=15),
+          axis.text=element_text(size=12),
+          title = element_text(size=18),
+          legend.text=element_text(size=10))
+
+
+##
+
+garch.predict <- ugarchforecast(garch.model, n.ahead=1257-test_window)
+forecasted_sigma <- as.numeric(garch.predict@forecast$sigmaFor)
+upper_bound <- exp(log(y.train.predict) + 1.96*forecasted_sigma)*100
+lower_bound <- exp(log(y.train.predict) - 1.96*forecasted_sigma)*100
+
+plot_df = data.frame(`Price Observed` = y.train*100,
+                     `Price Prediction` = y.train.predict*100,
+                     `Garch UB` = upper_bound,
+                     `Garch LB` = lower_bound,
+                     `Time` = times.train)
+names(plot_df) <- c("Observed Price", "Predicted Price", "Garch UB", "Garch LB", "Time")
+
+ggplot(plot_df, aes(x=Time)) +
+    geom_line(aes(y=`Observed Price`, color="Observed"), size=1) +
+    geom_line(aes(y=`Predicted Price`, color="LR + ARMA\nPrediction"), size=1) +
+    geom_line(aes(y=`Garch UB`, color="GARCH\nUpper Bound"), size=0.5) +
+    geom_line(aes(y=`Garch LB`, color="GARCH\nLower Bound"), size=0.5) +
+    scale_colour_manual("",
+                        breaks = c("Observed", "LR + ARMA\nPrediction", "GARCH\nUpper Bound", "GARCH\nLower Bound"),
+                        values = c("black", "red", "blue", "blue")) +
+    scale_x_continuous(n.breaks = 14) +
+    scale_y_continuous(n.breaks = 5) +
+    labs(x=paste0("Time (from 1 to ", max(times.train),")"),
+         y="Stock Market Close Price") +
+    theme_classic() +
+    theme(legend.pos="top",
+          axis.title = element_text(size=15),
+          axis.text=element_text(size=12),
+          title = element_text(size=18),
+          legend.text=element_text(size=10)) +
+    xlim(c(0, 100)) +
+    ylim(c(100, 107))

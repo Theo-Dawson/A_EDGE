@@ -317,17 +317,15 @@ garch_1_list <- c()
 garch_2_list <- c()
 z_stat_list <- c()
 test_window_list <- c()
-is_aic_list <- c()
+is_box_p_list <- c()
+is_white_p_list <- c()
 is_mae_list <- c()
 is_rmse_list <- c()
 is_mda_list <- c()
-is_interval_list <- c()
-os_ais_list <- c()
 os_mae_list <- c()
 os_rmse_list <- c()
 os_mda_list <- c()
 os_coverage_list <- c()
-os_interval_list <- c()
 
 setwd("~/Documents/MIT/15.072_Advanced_Analytics_Edge/Project/A_EDGE")
 
@@ -448,13 +446,6 @@ for (p in c(1, 2, 3, 4)) {
 
                 remove(test_return)
 
-
-                # //TODO
-                is_aic = 0
-                is_interval = 0
-                os_aic = 0
-                os_interval = 0
-
                 degree_list <- append(degree_list, degree_p)
                 arima_p_list <- append(arima_p_list, arima_P)
                 arima_d_list <- append(arima_d_list, arima_D)
@@ -463,17 +454,15 @@ for (p in c(1, 2, 3, 4)) {
                 garch_2_list <- append(garch_2_list, garch2)
                 z_stat_list <- append(z_stat_list, z_stat)
                 test_window_list <- append(test_window_list, test_window)
-                is_aic_list <- append(is_aic_list, is_aic)
+                is_box_p_list <- append(is_box_p_list, box_p_value_final)
+                is_white_p_list <- append(is_white_p_list, white_p_value_final)
                 is_mae_list <- append(is_mae_list, is_mae)
                 is_rmse_list <- append(is_rmse_list, is_rmse)
                 is_mda_list <- append(is_mda_list, is_mda)
-                is_interval_list <- append(is_interval_list, is_interval)
-                os_ais_list <- append(os_ais_list, os_aic)
                 os_mae_list <- append(os_mae_list, os_mae)
                 os_rmse_list <- append(os_rmse_list, os_rmse)
                 os_mda_list <- append(os_mda_list, os_mda)
                 os_coverage_list <- append(os_coverage_list, os_coverage)
-                os_interval_list <- append(os_interval_list, os_interval)
 
             }
         }
@@ -497,17 +486,15 @@ params_df = data.frame(`Degree Polynomial` = degree_list,
                        `GARCH 2` = garch_2_list,
                        `CI Z Stat` = z_stat_list,
                        `Test Window` = test_window_list,
-                       `IS AIC` = is_aic_list,
+                       `IS BOX P-VALUE` = is_box_p_list,
+                       `IS WHITE P-VALUE` = is_white_p_list,
                        `IS MAE` = is_mae_list,
                        `IS RMSE` = is_rmse_list,
                        `IS MDA` = is_mda_list,
-                       `IS Interval Score` = is_interval_list,
-                       `OS AIC` = os_ais_list,
                        `OS MAE` = os_mae_list,
                        `OS RMSE` = os_rmse_list,
                        `OS MDA` = os_mda_list,
-                       `OS Coverage Prob.` = os_coverage_list,
-                       `OS Interval Score` = os_interval_list)
-write.csv(params_df, "params_test.csv", row.names=TRUE)
+                       `OS COVERAGE PROB.` = os_coverage_list)
+write.csv(params_df, "params_test2.csv", row.names=TRUE)
 
 beep()
